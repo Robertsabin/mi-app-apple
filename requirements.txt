@@ -1,0 +1,4 @@
+requeriments
+streamlit
+pandas
+openpyxl
