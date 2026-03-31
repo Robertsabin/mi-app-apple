@@ -1,4 +1,4 @@
-mod_importar.py
+import streamlit as st
 import streamlit as st
 import pandas as pd
 
