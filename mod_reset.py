@@ -1,4 +1,4 @@
-mod_reset.py
+import streamlit as st
 import streamlit as st
 
 def resetear_historial():
