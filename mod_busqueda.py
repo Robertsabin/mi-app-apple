@@ -1,4 +1,4 @@
-mod_busqueda.py
+import streamlit as st
 import streamlit as st
 
 def buscador_sku(df):
