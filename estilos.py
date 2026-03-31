@@ -1,4 +1,4 @@
-estilos.py
+import streamlit as st
 import streamlit as st
 
 def aplicar_estilos_industriales():
