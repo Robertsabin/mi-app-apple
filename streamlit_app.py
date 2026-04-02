@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-from streamlit_gsheets import GSheetsConnection  # <--- NUEVA LIBRERÍA
+from streamlit_gsheets import GSheetsConnection
 
 # Importación de módulos locales
 from estilos import aplicar_estilos_industriales
@@ -38,8 +38,6 @@ if user_input == "admin" and pass_input == "1234":
     if "pr_activas" not in st.session_state:
         st.session_state.pr_activas = None
         
-    # El historial ahora lo leeremos directamente de Google Sheets si quieres, 
-    # pero mantenemos la variable por compatibilidad con tus módulos
     if "historial" not in st.session_state:
         st.session_state.historial = pd.DataFrame(
             columns=["Fecha", "Hora", "SKU", "Movimiento", "Cantidad", "OT"]
@@ -50,11 +48,13 @@ if user_input == "admin" and pass_input == "1234":
     mostrar_logo()
     st.title("📦 SISTEMA INTEGRADO DE RECAMBIOS MTTO.")
     
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    # Añadimos la 6ª pestaña: Historial General
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
         "📄 Carga de Datos",
         "📊 Seguimiento y Cruce",
         "🔎 Buscador rápido",
         "🎯 Operación QR",
+        "📜 Historial General",
         "🗑 Reset"
     ])
 
@@ -72,14 +72,40 @@ if user_input == "admin" and pass_input == "1234":
         
     with tab4:
         if st.session_state.inventario is not None:
-            # Pasamos 'conn' a la función para que mod_operacion pueda guardar en Sheets
             operacion_qr(st.session_state.inventario, st.session_state.historial, conn)
         else: 
             st.warning("⚠️ Debe cargar el inventario primero")
-        
+
     with tab5:
+        st.subheader("📜 Registro Histórico Completo (Nube)")
+        try:
+            # Leemos los datos de Google Sheets
+            # ttl=0 asegura que siempre lea lo más reciente sin usar memoria caché
+            df_historico = conn.read(ttl=0)
+            
+            if not df_historico.empty:
+                # Buscador rápido dentro del historial
+                busqueda = st.text_input("🔍 Buscar por SKU o OT en el historial:", placeholder="Escriba algo...")
+                
+                if busqueda:
+                    # Filtramos en todas las columnas si contienen el texto buscado
+                    df_filtrado = df_historico[df_historico.apply(lambda row: row.astype(str).str.contains(busqueda, case=False).any(), axis=1)]
+                    st.dataframe(df_filtrado, use_container_width=True)
+                else:
+                    st.dataframe(df_historico, use_container_width=True)
+                
+                # Opción de descargar todo el historial acumulado
+                csv_total = df_historico.to_csv(index=False, sep=';').encode('utf-8-sig')
+                st.download_button("📥 Descargar Historial Completo (.csv)", csv_total, "historial_total.csv", "text/csv")
+            else:
+                st.info("No hay datos registrados en el historial de la nube.")
+        except Exception as e:
+            st.error(f"No se pudo cargar el historial: {e}")
+        
+    with tab6:
         resetear_historial()
 else:
     if user_input != "" or pass_input != "":
         st.error("❌ Credenciales incorrectas.")
+
 
