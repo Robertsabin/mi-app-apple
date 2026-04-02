@@ -84,12 +84,28 @@ def operacion_qr(df_inventario, historial, conn):
 
     st.divider()
     
-    col_t1, col_t2 = st.columns([3, 1])
-    with col_t1:
-        st.subheader("📋 Movimientos de la Sesión")
-    with col_t2:
+    # --- MOSTRAR TABLA Y BOTONES ---
+    st.subheader("📋 Movimientos de la Sesión")
+    st.dataframe(st.session_state.historial, use_container_width=True)
+
+    col_descarga, col_borrar = st.columns(2)
+
+    with col_descarga:
+        if not st.session_state.historial.empty:
+            # Generar CSV preparado para Excel (punto y coma y firma UTF-8)
+            csv_data = st.session_state.historial.to_csv(index=False, sep=';').encode('utf-8-sig')
+            st.download_button(
+                label="📥 DESCARGAR REPORTE PARA EXCEL",
+                data=csv_data,
+                file_name=f"reporte_recambios_{datetime.now().strftime('%d_%m_%Y')}.csv",
+                mime='text/csv',
+                use_container_width=True
+            )
+        else:
+            st.info("ℹ️ Realice un escaneo para descargar.")
+
+    with col_borrar:
         if st.button("🗑️ BORRAR SESIÓN", use_container_width=True):
             st.session_state.historial = pd.DataFrame(columns=["Fecha", "Hora", "SKU", "Movimiento", "Cantidad", "OT"])
             st.rerun()
 
-    st.dataframe(st.session_state.historial, use_container_width=True)
