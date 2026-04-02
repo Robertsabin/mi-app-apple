@@ -1,10 +1,27 @@
 import streamlit as st
-import streamlit as st
 import pandas as pd
 from datetime import datetime
 
 def operacion_qr(df_inventario, historial):
     st.header("🎯 Registro de Inventario (QR)")
+
+    # --- TRADUCTOR DE COLUMNAS SAP ---
+    # Limpiamos los nombres de las columnas
+    df_inventario.columns = df_inventario.columns.str.strip().str.upper()
+
+    # Si no existe la columna SKU, pero sí existe NÚMERO MATERIAL, la renombramos
+    if "SKU" not in df_inventario.columns:
+        if "NÚMERO MATERIAL" in df_inventario.columns:
+            df_inventario = df_inventario.rename(columns={"NÚMERO MATERIAL": "SKU"})
+        elif "NUMERO MATERIAL" in df_inventario.columns:
+            df_inventario = df_inventario.rename(columns={"NUMERO MATERIAL": "SKU"})
+    
+    # Verificación final de seguridad
+    if "SKU" not in df_inventario.columns:
+        st.error(f"❌ No se encuentra la columna identificadora. Columnas en tu Excel: {list(df_inventario.columns)}")
+        st.info("💡 Tu Excel debe tener una columna llamada 'SKU' o 'NÚMERO MATERIAL'")
+        return
+    # ---------------------------------
 
     # Estados iniciales
     if "ot_manual" not in st.session_state: st.session_state.ot_manual = ""
@@ -17,7 +34,6 @@ def operacion_qr(df_inventario, historial):
     with col2:
         cantidad_input = st.number_input("Cantidad:", min_value=1, value=1, step=1)
     with col3:
-        # CORRECCIÓN AQUÍ: Añadimos el número 2 para crear dos columnas
         c_ot, c_btn = st.columns(2) 
         with c_ot:
             ot_val = st.text_input("Orden de Trabajo:", max_chars=9, value=st.session_state.ot_manual)
@@ -39,7 +55,7 @@ def operacion_qr(df_inventario, historial):
 
     if sku_raw:
         sku_leido = str(sku_raw).strip().upper()
-        # Limpieza segura de SKUs del maestro para evitar errores de búsqueda
+        # Buscamos en la columna que ahora ya se llama SKU (gracias al traductor de arriba)
         maestro_skus = df_inventario["SKU"].astype(str).str.strip().str.upper().unique().tolist()
         
         if sku_leido in maestro_skus:
@@ -59,7 +75,7 @@ def operacion_qr(df_inventario, historial):
             st.rerun() 
         else:
             if len(sku_leido) > 3:
-                st.error(f"❌ El SKU '{sku_leido}' no existe en SAP.")
+                st.error(f"❌ El código '{sku_leido}' no existe en la base de datos.")
                 if st.button("Limpiar error"):
                     st.session_state.contador_escaneo += 1
                     st.rerun()
