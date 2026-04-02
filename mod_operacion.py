@@ -20,9 +20,11 @@ def operacion_qr(df_inventario, historial, conn):
         return
     # ---------------------------------
 
+    # Estados iniciales
     if "ot_manual" not in st.session_state: st.session_state.ot_manual = ""
     if "contador_escaneo" not in st.session_state: st.session_state.contador_escaneo = 0
 
+    # 1. Interfaz de configuración
     col1, col2, col3 = st.columns([1, 1, 1.8])
     with col1:
         tipo = st.radio("Movimiento:", ["ENTRADA", "SALIDA"])
@@ -41,6 +43,7 @@ def operacion_qr(df_inventario, historial, conn):
 
     st.markdown("### 🔦 LECTURA QR")
     
+    # 2. CUADRO DE ESCANEO (Disparador automático)
     sku_raw = st.text_input(
         "Haga clic aquí antes de disparar con la pistola:", 
         placeholder="Esperando lectura...", 
@@ -49,38 +52,44 @@ def operacion_qr(df_inventario, historial, conn):
 
     if sku_raw:
         sku_leido = str(sku_raw).strip().upper()
+        # Limpiar lista de maestros para comparación exacta
         maestro_skus = df_inventario["SKU"].astype(str).str.strip().str.upper().unique().tolist()
         
         if sku_leido in maestro_skus:
-            # 1. Crear el nuevo registro
+            # A. Creamos el registro del movimiento
+            valor_final = cantidad_input if tipo == "ENTRADA" else (cantidad_input * -1)
+            
             nuevo_movimiento = pd.DataFrame([{
                 "Fecha": datetime.now().strftime("%d/%m/%Y"),
                 "Hora": datetime.now().strftime("%H:%M:%S"),
                 "SKU": sku_leido,
                 "Movimiento": tipo,
-                "Cantidad": cantidad_input if tipo == "ENTRADA" else (cantidad_input * -1),
+                "Cantidad": valor_final,
                 "OT": st.session_state.ot_manual if st.session_state.ot_manual else "SIN OT"
             }])
 
-            # 2. GUARDAR EN GOOGLE SHEETS (Automático)
+            # B. GUARDADO AUTOMÁTICO EN GOOGLE SHEETS
             try:
-                # Leemos lo que hay ahora en el Sheets
+                # Leemos la nube (ttl=0 para evitar caché y datos viejos)
                 df_gsheet = conn.read(ttl=0)
-                # Concatenamos la nueva fila
+                # Unimos el nuevo dato
                 df_actualizado = pd.concat([df_gsheet, nuevo_movimiento], ignore_index=True)
-                # Subimos los datos actualizados
+                # Actualizamos la nube
                 conn.update(data=df_actualizado)
-                st.toast("✅ Guardado en Google Sheets", icon="📊")
-            except Exception as e:
-                st.error(f"Error al conectar con Google Sheets: {e}")
+                st.toast(f"✅ SKU {sku_leido} guardado en Google Sheets", icon="📊")
+                
+                # C. Actualizamos historial local solo si la nube respondió OK
+                st.session_state.historial = pd.concat([nuevo_movimiento, st.session_state.historial], ignore_index=True)
+                st.session_state.contador_escaneo += 1
+                st.rerun()
 
-            # 3. Actualizar historial local de la sesión
-            st.session_state.historial = pd.concat([nuevo_movimiento, st.session_state.historial], ignore_index=True)
-            st.session_state.contador_escaneo += 1
-            st.rerun() 
+            except Exception as e:
+                st.error(f"❌ Error crítico de conexión: {e}")
+                st.info("💡 Revise que el Excel no esté bloqueado o la URL sea correcta.")
+        
         else:
             if len(sku_leido) > 3:
-                st.error(f"❌ El código '{sku_leido}' no existe en la base de datos.")
+                st.error(f"❌ El código '{sku_leido}' no existe en el inventario.")
 
     st.divider()
     
@@ -92,7 +101,6 @@ def operacion_qr(df_inventario, historial, conn):
 
     with col_descarga:
         if not st.session_state.historial.empty:
-            # Generar CSV preparado para Excel (punto y coma y firma UTF-8)
             csv_data = st.session_state.historial.to_csv(index=False, sep=';').encode('utf-8-sig')
             st.download_button(
                 label="📥 DESCARGAR REPORTE PARA EXCEL",
@@ -102,10 +110,11 @@ def operacion_qr(df_inventario, historial, conn):
                 use_container_width=True
             )
         else:
-            st.info("ℹ️ Realice un escaneo para descargar.")
+            st.info("ℹ️ Realice un escaneo para habilitar la descarga.")
 
     with col_borrar:
-        if st.button("🗑️ BORRAR SESIÓN", use_container_width=True):
+        if st.button("🗑️ BORRAR SESIÓN ACTUAL", use_container_width=True):
             st.session_state.historial = pd.DataFrame(columns=["Fecha", "Hora", "SKU", "Movimiento", "Cantidad", "OT"])
             st.rerun()
+
 
