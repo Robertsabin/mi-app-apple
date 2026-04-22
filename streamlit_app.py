@@ -12,14 +12,29 @@ from mod_busqueda import buscador_sku
 from mod_operacion import operacion_qr
 from mod_reset import resetear_historial
 
-# 1. CONFIGURACIÓN DE PÁGINA Y CONEXIÓN
+# ==========================================
+# 1. MOTOR DE VELOCIDAD (CACHÉ)
+# ==========================================
+@st.cache_data(show_spinner="Optimizando datos de SAP...")
+def procesar_excel_universal(file):
+    """Lee el Excel una sola vez y lo guarda en la memoria rápida."""
+    try:
+        df = pd.read_excel(file)
+        # Limpieza automática de espacios en blanco en los nombres de columnas
+        df.columns = [str(c).strip() for c in df.columns]
+        return df
+    except Exception as e:
+        st.error(f"Error al procesar el archivo: {e}")
+        return None
+
+# ==========================================
+# 2. CONFIGURACIÓN Y LOGIN
+# ==========================================
 st.set_page_config(page_title="ALMACEN RECAMBIOS MTTO", layout="wide")
 aplicar_estilos_industriales()
 
-# Creamos la conexión global que usará tu hoja de Google
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# --- LOGIN DIRECTO ---
 st.markdown("<h2 style='text-align: center;'>🔐 Acceso al Sistema</h2>", unsafe_allow_html=True)
 
 col1, col2, col3 = st.columns(3)
@@ -27,17 +42,16 @@ with col2:
     user_input = st.text_input("Usuario", key="user").strip().lower()
     pass_input = st.text_input("Contraseña", type="password", key="pass").strip()
 
-# Validación: admin / 1234
+# Validación
 if user_input == "admin" and pass_input == "1234":
     
-    # Inicializar estados de inventario e historial
+    # --- INICIALIZACIÓN DE ESTADOS (Session State) ---
     if "inventario" not in st.session_state:
         st.session_state.inventario = None
     if "pedidos_abiertos" not in st.session_state:
         st.session_state.pedidos_abiertos = None
     if "pr_activas" not in st.session_state:
         st.session_state.pr_activas = None
-        
     if "historial" not in st.session_state:
         st.session_state.historial = pd.DataFrame(
             columns=["Fecha", "Hora", "SKU", "Movimiento", "Cantidad", "OT"]
@@ -48,7 +62,7 @@ if user_input == "admin" and pass_input == "1234":
     mostrar_logo()
     st.title("📦 SISTEMA INTEGRADO DE RECAMBIOS MTTO.")
     
-    # Añadimos la 6ª pestaña: Historial General
+    # Definición de pestañas
     tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
         "📄 Carga de Datos",
         "📊 Seguimiento y Cruce",
@@ -59,10 +73,14 @@ if user_input == "admin" and pass_input == "1234":
     ])
 
     with tab1:
-        importar_archivo()
+        # Pasamos la función de caché al módulo de importar
+        importar_archivo(procesar_excel_universal)
         
     with tab2:
-        mostrar_seguimiento_cruzado()
+        if st.session_state.inventario is not None:
+            mostrar_seguimiento_cruzado()
+        else:
+            st.info("ℹ️ Pendiente cargar datos en la pestaña 1")
         
     with tab3:
         if st.session_state.inventario is not None:
@@ -79,33 +97,29 @@ if user_input == "admin" and pass_input == "1234":
     with tab5:
         st.subheader("📜 Registro Histórico Completo (Nube)")
         try:
-            # Leemos los datos de Google Sheets
-            # ttl=0 asegura que siempre lea lo más reciente sin usar memoria caché
-            df_historico = conn.read(ttl=0)
+            # TTL=60 permite que la app sea rápida durante 1 minuto antes de volver a preguntar a Google
+            df_historico = conn.read(ttl=60)
             
-            if not df_historico.empty:
-                # Buscador rápido dentro del historial
-                busqueda = st.text_input("🔍 Buscar por SKU o OT en el historial:", placeholder="Escriba algo...")
-                
+            if df_historico is not None and not df_historico.empty:
+                busqueda = st.text_input("🔍 Buscar por SKU o OT:", placeholder="Escriba algo...")
                 if busqueda:
-                    # Filtramos en todas las columnas si contienen el texto buscado
-                    df_filtrado = df_historico[df_historico.apply(lambda row: row.astype(str).str.contains(busqueda, case=False).any(), axis=1)]
-                    st.dataframe(df_filtrado, use_container_width=True)
+                    mask = df_historico.apply(lambda r: r.astype(str).str.contains(busqueda, case=False).any(), axis=1)
+                    st.dataframe(df_historico[mask], use_container_width=True)
                 else:
                     st.dataframe(df_historico, use_container_width=True)
                 
-                # Opción de descargar todo el historial acumulado
                 csv_total = df_historico.to_csv(index=False, sep=';').encode('utf-8-sig')
-                st.download_button("📥 Descargar Historial Completo (.csv)", csv_total, "historial_total.csv", "text/csv")
+                st.download_button("📥 Descargar Historial (.csv)", csv_total, "historial_total.csv", "text/csv")
             else:
-                st.info("No hay datos registrados en el historial de la nube.")
+                st.info("No hay datos en la nube.")
         except Exception as e:
-            st.error(f"No se pudo cargar el historial: {e}")
+            st.error(f"Error de conexión con historial: {e}")
         
     with tab6:
         resetear_historial()
 else:
     if user_input != "" or pass_input != "":
         st.error("❌ Credenciales incorrectas.")
+
 
 
